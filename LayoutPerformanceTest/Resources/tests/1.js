@@ -47,6 +47,7 @@ var displayCaps = Ti.Platform.displayCaps || Ti.Platform.DisplayCaps,
 	offset,
 	startTime,
 	warmupRoundsRemaining,
+	data,
 
 	// The minimum distance a child must be shifted. Must be a positive integer
 	OFFSET_MIN = 10,
@@ -74,7 +75,8 @@ var displayCaps = Ti.Platform.displayCaps || Ti.Platform.DisplayCaps,
 
 function createPostLayout(node) {
 	node.addEventListener('postlayout', function postLayout() {
-		var layoutTime = Date.now() - startTime;
+		var layoutTime = Date.now() - startTime,
+			dataEntry = data[data.length - 1];
 
 		node.removeEventListener('postlayout', postLayout);
 
@@ -83,6 +85,10 @@ function createPostLayout(node) {
 			sampleMean = (sampleMean * (samplesCollected - 1) + layoutTime) / samplesCollected;
 		} else {
 			sampleMean = layoutTime;
+		}
+
+		if (dataEntry) {
+			dataEntry.push(layoutTime);
 		}
 
 		if (samplesCollected === NUM_SAMPLES_TO_TAKE) {
@@ -99,8 +105,8 @@ function createPostLayout(node) {
 				status.text = 'Warming up';
 			} else {
 				status.text = 'Iteration: ' + iteration +
-					'\nSample Mean: ' + sampleMean.toFixed(1) * 2 +
-					'ms\nIteration Mean: ' + layoutMean.toFixed(1) * 2 + 'ms';
+					'\nSample Mean: ' + sampleMean.toFixed(1) +
+					'ms\nIteration Mean: ' + layoutMean.toFixed(1) + 'ms';
 			}
 			runTest();
 		}
@@ -180,7 +186,7 @@ function configureTest(name) {
 		inputField: createEntry('Num Samples', NUM_SAMPLES_TO_TAKE),
 		parseValue: function () {
 			var value = parseInt(this.inputField.value, 10);
-			if (!isNaN(value) && value > 0 && value <= NUM_SAMPLES_TO_TAKE) {
+			if (!isNaN(value) && value > 0 && value <= NUM_CHILDREN_TO_CHANGE) {
 				NUM_SAMPLES_TO_TAKE = value;
 				console.log('Running test with ' + NUM_SAMPLES_TO_TAKE + ' samples');
 			} else {
@@ -315,6 +321,8 @@ function initTest() {
 	}
 	testNodes = container.children;
 
+	data = [];
+
 	status = Ti.UI.createLabel({
 		left: 0,
 		top: 0,
@@ -378,6 +386,9 @@ function runTest() {
 			}
 
 			samplesCollected = 0;
+			if (iteration) {
+				data.push([]);
+			}
 
 			// Trigger a layout of the parent window to test optimization
 			topLevel.width += offset;
@@ -404,7 +415,7 @@ function runTest() {
 				bottom: 5
 			}),
 			results = Ti.UI.createLabel({
-				text: 'Mean layout time per iteration: ' + layoutMean * 2 + 'ms'
+				text: 'Mean layout time per iteration: ' + layoutMean + 'ms'
 			});
 		closeButton.addEventListener('click', function () {
 			resultsWin.close();
@@ -413,6 +424,7 @@ function runTest() {
 		resultsWin.add(results);
 		testWin.close();
 		resultsWin.open();
+		console.log(JSON.stringify(data, false, '\t'));
 	}
 }
 
