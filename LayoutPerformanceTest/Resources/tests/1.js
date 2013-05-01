@@ -4,7 +4,7 @@
  * Test overview:
  *
  * Question:
- * Given n child views, if we change the position of m <= n
+ * Given n child views in a flat structure, if we change the position of m <= n
  * child views, how long does the system take to lay out the changes?
  *
  * Limitations and known quantities:
@@ -23,12 +23,12 @@
  * 1) Per iteration:
  *		1) Randomly select m views to shift
  *		2) Select p views from m to sample the layout time of
- *		3) Listen for the 'postlayout' event on the root view. This is used as an analogue for when the layout began
+ *		3) Record the time to determine the setup time for the layout
+ *		3) Listen for the 'postlayout' event on the root view. This is used as an analogue for when the layout began (post-setup)
  *		4) Listen for the 'postlayout' event on all of the elements to be sampled
  *		5) Store the time difference between the root view's postlayout event and the child being sampled
  *		6) Calculate the median layout time of all the children being sampled and store it
  * 7) Once all iterations are complete, calculate the median of the iteration layout times
- * 8) Multiply times 2 to get the estimated layout time
  */
 
 var displayCaps = Ti.Platform.displayCaps || Ti.Platform.DisplayCaps,
@@ -57,7 +57,7 @@ var displayCaps = Ti.Platform.displayCaps || Ti.Platform.DisplayCaps,
 	OFFSET_SPREAD = 20,
 
 	// The number of child views to render to the screen
-	NUM_ELEMENTS = 1000,
+	NUM_ELEMENTS = 1500,
 
 	// The number of test iterations to run
 	NUM_ITERATIONS = 1000,
@@ -96,7 +96,6 @@ function createPostLayout(node) {
 		if (samplesCollected === NUM_SAMPLES_TO_TAKE) {
 
 			layoutTime = sampleMean * 2 + setupTime;
-			console.log('Layout time: ' + layoutTime);
 
 			// Update the iteration mean
 			if (iteration > 1) {
