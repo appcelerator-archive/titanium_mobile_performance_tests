@@ -1,5 +1,36 @@
 /*global Ti*/
 
+/**
+ * Test overview:
+ *
+ * Question:
+ * Given n child views, if we change the position of m <= n
+ * child views, how long does the system take to lay out the changes?
+ *
+ * Limitations and known quantities:
+ * 1) The time it takes to lay out a set of changes is not directly exposed
+ * 2) We do not know what the last element to be laid out is
+ * 3) We do know when the first element will be laid out
+ *
+ * Test setup:
+ * 1) Create a layout that is, for the purposes of this test, a root level view.
+ * 2) Create a single child view, referred to as "container", of the root level view such that the root level view's
+ *    dimensions can be changed without requiring the container to be re-laid out. Whether or not the container is
+ *    actually re-laid out is dependent on the underlying layout engine
+ * 3) Add n views to the container of a fixed width and height, but at a randomized left and top position
+ *
+ * Test operation:
+ * 1) Per iteration:
+ *		1) Randomly select m views to shift
+ *		2) Select p views from m to sample the layout time of
+ *		3) Listen for the 'postlayout' event on the root view. This is used as an analogue for when the layout began
+ *		4) Listen for the 'postlayout' event on all of the elements to be sampled
+ *		5) Store the time difference between the root view's postlayout event and the child being sampled
+ *		6) Calculate the median layout time of all the children being sampled and store it
+ * 7) Once all iterations are complete, calculate the median of the iteration layout times
+ * 8) Multiply times 2 to get the estimated layout time
+ */
+
 var displayCaps = Ti.Platform.displayCaps || Ti.Platform.DisplayCaps,
 
 	win,
@@ -8,44 +39,92 @@ var displayCaps = Ti.Platform.displayCaps || Ti.Platform.DisplayCaps,
 	status,
 
 	iteration,
+	layoutTimes,
 	iterationTimes,
-	iterationVelocities,
-	childrenLaidOut,
 	offset,
+	startTime,
 
-	OFFSET_SPREAD = 20,
+	// The minimum distance a child must be shifted. Must be a positive integer
 	OFFSET_MIN = 10,
+
+	// The variability in the distance a child will be shifted above the minimum. Must be a positive integer
+	OFFSET_SPREAD = 20,
+
+	// The number of child views to render to the screen
 	NUM_ELEMENTS = 1000,
-	TEST_DELAY = 1000,
+
+	// The number of test iterations to run
 	NUM_ITERATIONS = 1000,
-	NUM_CHILDREN_TO_CHANGE = 100;
+
+	// The number of children to shift per iteration
+	NUM_CHILDREN_TO_CHANGE = 100,
+
+	// The number of samples to take per iteration. Must be less than or equal to the number of children to shift
+	NUM_SAMPLES_TO_TAKE = 1,
+
+	// The time delay after the last sample was taken until the next test is started
+	TEST_DELAY = 250;
+
+function createPostLayout(node) {
+	node.addEventListener('postlayout', function postLayout() {
+		var layoutTime,
+			sorted;
+		node.removeEventListener('postlayout', postLayout);
+		layoutTime = Date.now() - startTime;
+		iterationTimes.push(layoutTime);
+		if (iterationTimes.length === NUM_SAMPLES_TO_TAKE) {
+			sorted = iterationTimes.sort();
+			layoutTime = sorted[Math.floor(sorted.length / 2)];
+			layoutTimes.push(layoutTime);
+			sorted = layoutTimes.sort();
+			status.text = 'Iteration: ' + iteration +
+				'\nTime: ' + layoutTime +
+				'ms\nMedian Time: ' + sorted[Math.floor(sorted.length / 2)] + 'ms';
+			runTest();
+		}
+	});
+}
 
 function runTest() {
 	iteration++;
-	if (iteration < NUM_ITERATIONS) {
+	if (iteration <= NUM_ITERATIONS) {
 		setTimeout(function () {
 			var childrenToChange = [],
+				childrenToSample = [],
+				availableChildren,
 				child,
 				i,
 				direction;
 
-			while(childrenToChange.length < NUM_CHILDREN_TO_CHANGE) {
-				child = testNodes[Math.floor(Math.random() * testNodes.length)];
-				if (childrenToChange.indexOf(child) === -1) {
-					childrenToChange.push(child);
-				}
+			// Randomly select NUM_CHILDREN_TO_CHANGE from the list of all test nodes
+			availableChildren = [].concat(testNodes);
+			while(childrenToChange.length < NUM_CHILDREN_TO_CHANGE && availableChildren.length) {
+				childrenToChange.push(availableChildren.splice(Math.floor(Math.random() * availableChildren.length), 1)[0]);
 			}
 
+			// Randomly select NUM_SAMPLES_TO_TAKE from the list of children randomely selected above
+			availableChildren = [].concat(childrenToChange);
+			while(childrenToSample.length < NUM_SAMPLES_TO_TAKE && availableChildren.length) {
+				childrenToSample.push(availableChildren.splice(Math.floor(Math.random() * availableChildren.length), 1)[0]);
+			}
+
+			numSamplesTaken = 0;
+			iterationTimes = [];
+
+			// Trigger a layout of the parent window to test optimization
 			topLevel.width += offset;
 			topLevel.height += offset;
 			offset *= -1;
-			childrenLaidOut = 0;
 
+			// Trigger a layout on the selected children
 			for (i = 0; i < NUM_CHILDREN_TO_CHANGE; i++) {
 				direction = (Math.random() - 0.5) > 0 ? 1 : -1;
 				child = childrenToChange[i];
 				child.left = Math.floor(child.left + direction * (Math.random() * OFFSET_SPREAD + OFFSET_MIN));
 				child.top = Math.floor(child.top + direction * (Math.random() * OFFSET_SPREAD + OFFSET_MIN));
+				if (childrenToSample.indexOf(child) !== -1) {
+					createPostLayout(child);
+				}
 			}
 		}, TEST_DELAY);
 	}
@@ -61,30 +140,7 @@ exports.init = function () {
 		}),
 		child,
 		color = [0, 0, 0],
-		i,
-		startTime;
-
-	function postLayout() {
-		var layoutTime,
-			velocity = NaN,
-			sorted;
-		if (iteration) {
-			childrenLaidOut++;
-			if (childrenLaidOut === NUM_CHILDREN_TO_CHANGE) {
-				layoutTime = (Date.now() - startTime);
-				iterationTimes.push(layoutTime);
-				if (iterationTimes.length > 1) {
-					iterationVelocities.push(velocity = iterationTimes[iterationTimes.length - 1] - iterationTimes[iterationTimes.length - 2]);
-				}
-				status.text = 'Iteration: ' + iteration +
-					'\nTime: ' + layoutTime +
-					'ms\nVelocity: ' + velocity +
-					'ms\nMedian Time: ' + (sorted = iterationTimes.sort())[Math.floor(sorted.length / 2)] +
-					(isNaN(velocity) ? 'ms' : 'ms\nMedian Velocity: ' + (sorted = iterationVelocities.sort())[Math.floor(sorted.length / 2)] + 'ms');
-				runTest();
-			}
-		}
-	}
+		i;
 
 	for (i = 0; i < NUM_ELEMENTS; i++) {
 		color[0] += 15;
@@ -110,7 +166,6 @@ exports.init = function () {
 			width: 20,
 			height: 20
 		});
-		child.addEventListener('postlayout', postLayout);
 		container.add(child);
 	}
 	testNodes = container.children;
@@ -120,7 +175,9 @@ exports.init = function () {
 		top: 0,
 		borderColor: '#000',
 		borderWidth: 1,
-		backgroundColor: '#fff'
+		backgroundColor: '#fff',
+		width: 300,
+		height: 100
 	});
 
 	topLevel = Ti.UI.createView({
@@ -145,9 +202,7 @@ exports.init = function () {
 
 exports.run = function () {
 	iteration = 0;
-	iterationTimes = [];
-	iterationVelocities = [];
-	childrenLaidOut = 0;
+	layoutTimes = [];
 	offset = -5;
 	runTest();
 };
