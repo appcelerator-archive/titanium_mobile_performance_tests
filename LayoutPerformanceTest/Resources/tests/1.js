@@ -33,16 +33,20 @@
 
 var displayCaps = Ti.Platform.displayCaps || Ti.Platform.DisplayCaps,
 
-	win,
+	displayName,
 	testNodes,
 	topLevel,
 	status,
+	testWin,
+	testDelay,
 
 	iteration,
-	layoutTimes,
-	iterationTimes,
+	layoutMean,
+	samplesCollected,
+	sampleMean,
 	offset,
 	startTime,
+	warmupRoundsRemaining,
 
 	// The minimum distance a child must be shifted. Must be a positive integer
 	OFFSET_MIN = 10,
@@ -62,75 +66,216 @@ var displayCaps = Ti.Platform.displayCaps || Ti.Platform.DisplayCaps,
 	// The number of samples to take per iteration. Must be less than or equal to the number of children to shift
 	NUM_SAMPLES_TO_TAKE = 1,
 
+	// The number of rounds to run to prime the test delay estimate
+	WARMUP_ROUNDS = 10,
+
 	// The time delay after the last sample was taken until the next test is started
-	TEST_DELAY = 250;
+	WARMUP_ROUND_DELAY = 1000;
 
 function createPostLayout(node) {
 	node.addEventListener('postlayout', function postLayout() {
-		var layoutTime,
-			sorted;
+		var layoutTime = Date.now() - startTime;
+
 		node.removeEventListener('postlayout', postLayout);
-		layoutTime = Date.now() - startTime;
-		iterationTimes.push(layoutTime);
-		if (iterationTimes.length === NUM_SAMPLES_TO_TAKE) {
-			sorted = iterationTimes.sort();
-			layoutTime = sorted[Math.floor(sorted.length / 2)];
-			layoutTimes.push(layoutTime);
-			sorted = layoutTimes.sort();
-			status.text = 'Iteration: ' + iteration +
-				'\nTime: ' + layoutTime +
-				'ms\nMedian Time: ' + sorted[Math.floor(sorted.length / 2)] + 'ms';
+
+		// Update the sample mean
+		if (++samplesCollected > 1) {
+			sampleMean = (sampleMean * (samplesCollected - 1) + layoutTime) / samplesCollected;
+		} else {
+			sampleMean = layoutTime;
+		}
+
+		if (samplesCollected === NUM_SAMPLES_TO_TAKE) {
+
+			// Update the iteration mean
+			if (iteration > 1) {
+				layoutMean = (layoutMean * (iteration - 1) + sampleMean) / iteration;
+			} else {
+				layoutMean = sampleMean;
+			}
+
+			// Update the status text
+			if (warmupRoundsRemaining) {
+				status.text = 'Warming up';
+			} else {
+				status.text = 'Iteration: ' + iteration +
+					'\nSample Mean: ' + sampleMean.toFixed(1) * 2 +
+					'ms\nIteration Mean: ' + layoutMean.toFixed(1) * 2 + 'ms';
+			}
 			runTest();
 		}
 	});
 }
 
-function runTest() {
-	iteration++;
-	if (iteration <= NUM_ITERATIONS) {
-		setTimeout(function () {
-			var childrenToChange = [],
-				childrenToSample = [],
-				availableChildren,
-				child,
-				i,
-				direction;
+function configureTest(name) {
+	var configWin = Ti.UI.createWindow({
+			backgroundColor: '#fff',
+			layout: 'vertical'
+		}),
+		configTable = Ti.UI.createTableView({
+			top: 5
+		}),
+		runButton = Ti.UI.createButton({
+			title: 'Run Test',
+			top: 5
+		}),
+		inputValidators = [];
 
-			// Randomly select NUM_CHILDREN_TO_CHANGE from the list of all test nodes
-			availableChildren = [].concat(testNodes);
-			while(childrenToChange.length < NUM_CHILDREN_TO_CHANGE && availableChildren.length) {
-				childrenToChange.push(availableChildren.splice(Math.floor(Math.random() * availableChildren.length), 1)[0]);
-			}
+	displayName = name;
 
-			// Randomly select NUM_SAMPLES_TO_TAKE from the list of children randomely selected above
-			availableChildren = [].concat(childrenToChange);
-			while(childrenToSample.length < NUM_SAMPLES_TO_TAKE && availableChildren.length) {
-				childrenToSample.push(availableChildren.splice(Math.floor(Math.random() * availableChildren.length), 1)[0]);
-			}
-
-			numSamplesTaken = 0;
-			iterationTimes = [];
-
-			// Trigger a layout of the parent window to test optimization
-			topLevel.width += offset;
-			topLevel.height += offset;
-			offset *= -1;
-
-			// Trigger a layout on the selected children
-			for (i = 0; i < NUM_CHILDREN_TO_CHANGE; i++) {
-				direction = (Math.random() - 0.5) > 0 ? 1 : -1;
-				child = childrenToChange[i];
-				child.left = Math.floor(child.left + direction * (Math.random() * OFFSET_SPREAD + OFFSET_MIN));
-				child.top = Math.floor(child.top + direction * (Math.random() * OFFSET_SPREAD + OFFSET_MIN));
-				if (childrenToSample.indexOf(child) !== -1) {
-					createPostLayout(child);
-				}
-			}
-		}, TEST_DELAY);
+	function createEntry(name, defaultValue) {
+		var row = Ti.UI.createTableViewRow({
+				layout: 'horizontal',
+				horizontalWrap: false
+			}),
+			label = Ti.UI.createLabel({
+				text: name + ': ',
+			}),
+			inputField = Ti.UI.createTextField({
+				value: defaultValue || '',
+				width: Ti.UI.FILL
+			});
+		row.add(label);
+		row.add(inputField);
+		configTable.appendRow(row);
+		return inputField;
 	}
+	inputValidators.push({
+		inputField: createEntry('Num Elements', NUM_ELEMENTS),
+		parseValue: function () {
+			var value = parseInt(this.inputField.value, 10);
+			if (!isNaN(value) && value > 0) {
+				NUM_ELEMENTS = value;
+				console.log('Running test with ' + NUM_ELEMENTS + ' elements');
+			} else {
+				console.warn('Invalid number of elements specified, using the default of ' + NUM_ELEMENTS);
+			}
+		}
+	});
+	inputValidators.push({
+		inputField: createEntry('Num Iterations', NUM_ITERATIONS),
+		parseValue: function () {
+			var value = parseInt(this.inputField.value, 10);
+			if (!isNaN(value) && value > 0) {
+				NUM_ITERATIONS = value;
+				console.log('Running test with ' + NUM_ITERATIONS + ' iterations');
+			} else {
+				console.warn('Invalid number of iterations specified, using the default of ' + NUM_ITERATIONS);
+			}
+		}
+	});
+	inputValidators.push({
+		inputField: createEntry('Children To Shift', NUM_CHILDREN_TO_CHANGE),
+		parseValue: function () {
+			var value = parseInt(this.inputField.value, 10);
+			if (!isNaN(value) && value > 0 && value <= NUM_ELEMENTS) {
+				NUM_CHILDREN_TO_CHANGE = value;
+				console.log('Running test with ' + NUM_CHILDREN_TO_CHANGE + ' children to shift');
+			} else {
+				console.warn('Invalid number of children to shift specified, using the default of ' + NUM_CHILDREN_TO_CHANGE);
+			}
+		}
+	});
+	inputValidators.push({
+		inputField: createEntry('Num Samples', NUM_SAMPLES_TO_TAKE),
+		parseValue: function () {
+			var value = parseInt(this.inputField.value, 10);
+			if (!isNaN(value) && value > 0 && value <= NUM_SAMPLES_TO_TAKE) {
+				NUM_SAMPLES_TO_TAKE = value;
+				console.log('Running test with ' + NUM_SAMPLES_TO_TAKE + ' samples');
+			} else {
+				console.warn('Invalid number of samples to take specified, using the default of ' + NUM_SAMPLES_TO_TAKE);
+			}
+		}
+	});
+	inputValidators.push({
+		inputField: createEntry('Offset Min', OFFSET_MIN),
+		parseValue: function () {
+			var value = parseInt(this.inputField.value, 10);
+			if (!isNaN(value) && value > 0) {
+				OFFSET_MIN = value;
+				console.log('Running test with an offset min of ' + OFFSET_MIN);
+			} else {
+				console.warn('Invalid offset minimum specified, using the default of ' + OFFSET_MIN);
+			}
+		}
+	});
+	inputValidators.push({
+		inputField: createEntry('Offset Spread', OFFSET_SPREAD),
+		parseValue: function () {
+			var value = parseInt(this.inputField.value, 10);
+			if (!isNaN(value) && value > 0) {
+				OFFSET_SPREAD = value;
+				console.log('Running test with an offset spread of ' + OFFSET_SPREAD);
+			} else {
+				console.warn('Invalid offset spread specified, using the default of ' + OFFSET_SPREAD);
+			}
+		}
+	});
+	inputValidators.push({
+		inputField: createEntry('Warmup Rounds', WARMUP_ROUNDS),
+		parseValue: function () {
+			var value = parseInt(this.inputField.value, 10);
+			if (!isNaN(value) && value > 0) {
+				WARMUP_ROUNDS = value;
+				console.log('Running test with ' + WARMUP_ROUNDS + ' warmup rounds');
+			} else {
+				console.warn('Invalid number of warmup rounds specified, using the default of ' + WARMUP_ROUNDS);
+			}
+		}
+	});
+	inputValidators.push({
+		inputField: createEntry('Warmup Round Delay', WARMUP_ROUND_DELAY),
+		parseValue: function () {
+			var value = parseInt(this.inputField.value, 10);
+			if (!isNaN(value) && value > 0) {
+				WARMUP_ROUND_DELAY = value;
+				console.log('Running test with a ' + WARMUP_ROUND_DELAY + ' ms warmup round delay');
+			} else {
+				console.warn('Invalid warmup round delay specified, using the default of ' + WARMUP_ROUND_DELAY);
+			}
+		}
+	});
+
+	runButton.addEventListener('click', function () {
+
+		var i, len,
+			loadingWin = Ti.UI.createWindow({
+				backgroundColor: '#fff'
+			});
+
+		console.log('\n*****************\nRunning ' + displayName);
+
+		// Parse the input
+		for (i = 0, len = inputValidators.length; i < len; i++) {
+			inputValidators[i].parseValue();
+		}
+		configWin.close();
+
+		loadingWin.add(Ti.UI.createLabel({
+			text: 'Loading test'
+		}));
+		loadingWin.open();
+
+		setTimeout(function () {
+			// Initialize the test
+			initTest();
+			loadingWin.close();
+
+			// Kickstart the test
+			testDelay = WARMUP_ROUND_DELAY;
+			iteration = 0;
+			offset = -5;
+			warmupRoundsRemaining = WARMUP_ROUNDS;
+			runTest();
+		}, 100);
+	});
+	configWin.add(runButton);
+	configWin.add(configTable);
+	configWin.open();
 }
 
-exports.init = function () {
+function initTest() {
 	var container = Ti.UI.createView({
 			left: 0,
 			top: 0,
@@ -193,16 +338,84 @@ exports.init = function () {
 	topLevel.add(container);
 	topLevel.add(status);
 
-	win = Ti.UI.createWindow({
+	testWin = Ti.UI.createWindow({
 		backgroundColor: '#fff'
 	});
-	win.add(topLevel);
-	win.open();
-};
+	testWin.add(topLevel);
+	testWin.open();
+}
 
-exports.run = function () {
-	iteration = 0;
-	layoutTimes = [];
-	offset = -5;
-	runTest();
+function runTest() {
+	if (warmupRoundsRemaining) {
+		warmupRoundsRemaining--;
+		if (!warmupRoundsRemaining) {
+			iteration = 1;
+			testDelay = layoutMean * 4;
+			console.log('Running tests with a test delay of ' + testDelay + 'ms');
+		}
+	} else {
+		iteration++;
+	}
+	if (iteration <= NUM_ITERATIONS) {
+		setTimeout(function () {
+			var childrenToChange = [],
+				childrenToSample = [],
+				availableChildren,
+				child,
+				i,
+				direction;
+
+			// Randomly select NUM_CHILDREN_TO_CHANGE from the list of all test nodes
+			availableChildren = [].concat(testNodes);
+			while(childrenToChange.length < NUM_CHILDREN_TO_CHANGE && availableChildren.length) {
+				childrenToChange.push(availableChildren.splice(Math.floor(Math.random() * availableChildren.length), 1)[0]);
+			}
+
+			// Randomly select NUM_SAMPLES_TO_TAKE from the list of children randomely selected above
+			availableChildren = [].concat(childrenToChange);
+			while(childrenToSample.length < NUM_SAMPLES_TO_TAKE && availableChildren.length) {
+				childrenToSample.push(availableChildren.splice(Math.floor(Math.random() * availableChildren.length), 1)[0]);
+			}
+
+			samplesCollected = 0;
+
+			// Trigger a layout of the parent window to test optimization
+			topLevel.width += offset;
+			topLevel.height += offset;
+			offset *= -1;
+
+			// Trigger a layout on the selected children
+			for (i = 0; i < NUM_CHILDREN_TO_CHANGE; i++) {
+				direction = (Math.random() - 0.5) > 0 ? 1 : -1;
+				child = childrenToChange[i];
+				child.left = Math.floor(child.left + direction * (Math.random() * OFFSET_SPREAD + OFFSET_MIN));
+				child.top = Math.floor(child.top + direction * (Math.random() * OFFSET_SPREAD + OFFSET_MIN));
+				if (childrenToSample.indexOf(child) !== -1) {
+					createPostLayout(child);
+				}
+			}
+		}, testDelay);
+	} else {
+		var resultsWin = Ti.UI.createWindow({
+				backgroundColor: '#fff'
+			}),
+			closeButton = Ti.UI.createButton({
+				title: 'Close',
+				bottom: 5
+			}),
+			results = Ti.UI.createLabel({
+				text: 'Mean layout time per iteration: ' + layoutMean * 2 + 'ms'
+			});
+		closeButton.addEventListener('click', function () {
+			resultsWin.close();
+		});
+		resultsWin.add(closeButton);
+		resultsWin.add(results);
+		testWin.close();
+		resultsWin.open();
+	}
+}
+
+exports.run = function (name) {
+	configureTest(name);
 };
