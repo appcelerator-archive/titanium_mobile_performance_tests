@@ -38,6 +38,7 @@ var displayCaps = Ti.Platform.displayCaps || Ti.Platform.DisplayCaps,
 	topLevel,
 	status,
 	testWin,
+	testDelay,
 
 	iteration,
 	layoutMean,
@@ -45,6 +46,7 @@ var displayCaps = Ti.Platform.displayCaps || Ti.Platform.DisplayCaps,
 	sampleMean,
 	offset,
 	startTime,
+	warmupRoundsRemaining,
 
 	// The minimum distance a child must be shifted. Must be a positive integer
 	OFFSET_MIN = 10,
@@ -64,8 +66,11 @@ var displayCaps = Ti.Platform.displayCaps || Ti.Platform.DisplayCaps,
 	// The number of samples to take per iteration. Must be less than or equal to the number of children to shift
 	NUM_SAMPLES_TO_TAKE = 1,
 
+	// The number of rounds to run to prime the test delay estimate
+	WARMUP_ROUNDS = 10,
+
 	// The time delay after the last sample was taken until the next test is started
-	TEST_DELAY = 50;
+	WARMUP_ROUND_DELAY = 1000;
 
 function createPostLayout(node) {
 	node.addEventListener('postlayout', function postLayout() {
@@ -90,9 +95,13 @@ function createPostLayout(node) {
 			}
 
 			// Update the status text
-			status.text = 'Iteration: ' + iteration +
-				'\nSample Mean: ' + sampleMean.toFixed(1) * 2 +
-				'ms\nIteration Mean: ' + layoutMean.toFixed(1) * 2 + 'ms';
+			if (warmupRoundsRemaining) {
+				status.text = 'Warming up';
+			} else {
+				status.text = 'Iteration: ' + iteration +
+					'\nSample Mean: ' + sampleMean.toFixed(1) * 2 +
+					'ms\nIteration Mean: ' + layoutMean.toFixed(1) * 2 + 'ms';
+			}
 			runTest();
 		}
 	});
@@ -103,6 +112,9 @@ function configureTest(name) {
 			backgroundColor: '#fff',
 			layout: 'vertical'
 		}),
+		configTable = Ti.UI.createTableView({
+			top: 5
+		}),
 		runButton = Ti.UI.createButton({
 			title: 'Run Test',
 			top: 5
@@ -112,24 +124,20 @@ function configureTest(name) {
 	displayName = name;
 
 	function createEntry(name, defaultValue) {
-		var row = Ti.UI.createView({
-				width: '100%',
-				height: Ti.UI.SIZE,
-				top: 5
+		var row = Ti.UI.createTableViewRow({
+				layout: 'horizontal',
+				horizontalWrap: false
 			}),
 			label = Ti.UI.createLabel({
-				text: name,
-				left: 5,
-				width: '23%'
+				text: name + ': ',
 			}),
 			inputField = Ti.UI.createTextField({
 				value: defaultValue || '',
-				right: 10,
-				width: '73%',
+				width: Ti.UI.FILL
 			});
 		row.add(label);
 		row.add(inputField);
-		configWin.add(row);
+		configTable.appendRow(row);
 		return inputField;
 	}
 	inputValidators.push({
@@ -204,6 +212,30 @@ function configureTest(name) {
 			}
 		}
 	});
+	inputValidators.push({
+		inputField: createEntry('Warmup Rounds', WARMUP_ROUNDS),
+		parseValue: function () {
+			var value = parseInt(this.inputField.value, 10);
+			if (!isNaN(value) && value > 0) {
+				WARMUP_ROUNDS = value;
+				console.log('Running test with ' + WARMUP_ROUNDS + ' warmup rounds');
+			} else {
+				console.warn('Invalid number of warmup rounds specified, using the default of ' + WARMUP_ROUNDS);
+			}
+		}
+	});
+	inputValidators.push({
+		inputField: createEntry('Warmup Round Delay', WARMUP_ROUND_DELAY),
+		parseValue: function () {
+			var value = parseInt(this.inputField.value, 10);
+			if (!isNaN(value) && value > 0) {
+				WARMUP_ROUND_DELAY = value;
+				console.log('Running test with a ' + WARMUP_ROUND_DELAY + ' ms warmup round delay');
+			} else {
+				console.warn('Invalid warmup round delay specified, using the default of ' + WARMUP_ROUND_DELAY);
+			}
+		}
+	});
 
 	runButton.addEventListener('click', function () {
 
@@ -231,12 +263,15 @@ function configureTest(name) {
 			loadingWin.close();
 
 			// Kickstart the test
+			testDelay = WARMUP_ROUND_DELAY;
 			iteration = 0;
 			offset = -5;
+			warmupRoundsRemaining = WARMUP_ROUNDS;
 			runTest();
 		}, 100);
 	});
 	configWin.add(runButton);
+	configWin.add(configTable);
 	configWin.open();
 }
 
@@ -311,7 +346,16 @@ function initTest() {
 }
 
 function runTest() {
-	iteration++;
+	if (warmupRoundsRemaining) {
+		warmupRoundsRemaining--;
+		if (!warmupRoundsRemaining) {
+			iteration = 1;
+			testDelay = layoutMean * 4;
+			console.log('Running tests with a test delay of ' + testDelay + 'ms');
+		}
+	} else {
+		iteration++;
+	}
 	if (iteration <= NUM_ITERATIONS) {
 		setTimeout(function () {
 			var childrenToChange = [],
@@ -350,7 +394,7 @@ function runTest() {
 					createPostLayout(child);
 				}
 			}
-		}, TEST_DELAY);
+		}, testDelay);
 	} else {
 		var resultsWin = Ti.UI.createWindow({
 				backgroundColor: '#fff'
