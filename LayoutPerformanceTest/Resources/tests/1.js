@@ -46,6 +46,7 @@ var displayCaps = Ti.Platform.displayCaps || Ti.Platform.DisplayCaps,
 	sampleMean,
 	offset,
 	startTime,
+	setupTime,
 	warmupRoundsRemaining,
 	data,
 
@@ -88,16 +89,20 @@ function createPostLayout(node) {
 		}
 
 		if (dataEntry) {
-			dataEntry.push(layoutTime);
+			dataEntry.sampleTimes.push(layoutTime);
+				dataEntry.setupTime = setupTime;
 		}
 
 		if (samplesCollected === NUM_SAMPLES_TO_TAKE) {
 
+			layoutTime = sampleMean * 2 + setupTime;
+			console.log('Layout time: ' + layoutTime);
+
 			// Update the iteration mean
 			if (iteration > 1) {
-				layoutMean = (layoutMean * (iteration - 1) + sampleMean) / iteration;
+				layoutMean = (layoutMean * (iteration - 1) + layoutTime) / iteration;
 			} else {
-				layoutMean = sampleMean;
+				layoutMean = layoutTime;
 			}
 
 			// Update the status text
@@ -105,8 +110,10 @@ function createPostLayout(node) {
 				status.text = 'Warming up';
 			} else {
 				status.text = 'Iteration: ' + iteration +
-					'\nSample Mean: ' + sampleMean.toFixed(1) +
-					'ms\nIteration Mean: ' + layoutMean.toFixed(1) + 'ms';
+					'\nSetup Time: ' + setupTime +
+					'ms\nSample Mean: ' + Math.round(sampleMean) +
+					'ms\nEstimated Layout Time: ' + Math.round(layoutTime) +
+					'ms\nLayout Mean: ' + Math.round(layoutMean) + 'ms';
 			}
 			runTest();
 		}
@@ -341,7 +348,9 @@ function initTest() {
 		backgroundColor: '#f00'
 	});
 	topLevel.addEventListener('postlayout', function () {
-		startTime = Date.now();
+		var currentTime = Date.now();
+		setupTime = currentTime - startTime;
+		startTime = currentTime;
 	});
 	topLevel.add(container);
 	topLevel.add(status);
@@ -358,7 +367,7 @@ function runTest() {
 		warmupRoundsRemaining--;
 		if (!warmupRoundsRemaining) {
 			iteration = 1;
-			testDelay = layoutMean * 4;
+			testDelay = layoutMean;
 			console.log('Running tests with a test delay of ' + testDelay + 'ms');
 		}
 	} else {
@@ -387,8 +396,12 @@ function runTest() {
 
 			samplesCollected = 0;
 			if (iteration) {
-				data.push([]);
+				data.push({
+					sampleTimes: []
+				});
 			}
+
+			startTime = Date.now();
 
 			// Trigger a layout of the parent window to test optimization
 			topLevel.width += offset;
@@ -415,7 +428,7 @@ function runTest() {
 				bottom: 5
 			}),
 			results = Ti.UI.createLabel({
-				text: 'Mean layout time per iteration: ' + layoutMean + 'ms'
+				text: 'Mean layout time per iteration: ' + layoutMean.toFixed(1) + 'ms'
 			});
 		closeButton.addEventListener('click', function () {
 			resultsWin.close();
