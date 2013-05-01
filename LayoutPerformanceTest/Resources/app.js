@@ -19,42 +19,14 @@ var win = Ti.UI.createWindow({
 		}],
 	testList = Ti.UI.createTableView({
 		data: tests
-	}),
-	loadingScreen = Ti.UI.createView({
-		visible: false
 	});
 
-loadingScreen.add(Ti.UI.createView({
-	backgroundColor: '#000',
-	opacity: 0.5
-}));
-loadingScreen.add(Ti.UI.createLabel({
-	text: 'Loading Test...',
-	backgroundColor: '#fff',
-	borderWidth: 1,
-	borderColor: '#000',
-	width: '50%',
-	height: '10%',
-	textAlign: Ti.UI.TEXT_ALIGNMENT_CENTER
-}));
-
 testList.addEventListener('click', function (e) {
-	var test = tests[e.index],
-		testInstance;
-
-	loadingScreen.visible = true;
-	console.debug('\n*****************\nStarting test ' + test.title);
-
-	setTimeout(function () {
-		testInstance = require(test.url);
-		testInstance.init();
-		loadingScreen.visible = false;
-		setTimeout(function () {
-			testInstance.run(1000, 100);
-		}, 0);
-	}, 0);
+	var test = tests[e.index];
+	if (test) {
+		require(test.url).run(test.title);
+	}
 });
 
 win.add(testList);
-win.add(loadingScreen);
 win.open();
