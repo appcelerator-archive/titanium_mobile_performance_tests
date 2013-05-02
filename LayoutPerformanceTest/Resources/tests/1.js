@@ -4,7 +4,7 @@
  * Test overview:
  *
  * Question:
- * Given n child views, if we change the position of m <= n
+ * Given n child views in a flat structure, if we change the position of m <= n
  * child views, how long does the system take to lay out the changes?
  *
  * Limitations and known quantities:
@@ -23,12 +23,12 @@
  * 1) Per iteration:
  *		1) Randomly select m views to shift
  *		2) Select p views from m to sample the layout time of
- *		3) Listen for the 'postlayout' event on the root view. This is used as an analogue for when the layout began
+ *		3) Record the time to determine the setup time for the layout
+ *		3) Listen for the 'postlayout' event on the root view. This is used as an analogue for when the layout began (post-setup)
  *		4) Listen for the 'postlayout' event on all of the elements to be sampled
  *		5) Store the time difference between the root view's postlayout event and the child being sampled
  *		6) Calculate the median layout time of all the children being sampled and store it
  * 7) Once all iterations are complete, calculate the median of the iteration layout times
- * 8) Multiply times 2 to get the estimated layout time
  */
 
 var displayCaps = Ti.Platform.displayCaps || Ti.Platform.DisplayCaps,
@@ -46,7 +46,9 @@ var displayCaps = Ti.Platform.displayCaps || Ti.Platform.DisplayCaps,
 	sampleMean,
 	offset,
 	startTime,
+	setupTime,
 	warmupRoundsRemaining,
+	data,
 
 	// The minimum distance a child must be shifted. Must be a positive integer
 	OFFSET_MIN = 10,
@@ -55,7 +57,7 @@ var displayCaps = Ti.Platform.displayCaps || Ti.Platform.DisplayCaps,
 	OFFSET_SPREAD = 20,
 
 	// The number of child views to render to the screen
-	NUM_ELEMENTS = 1000,
+	NUM_ELEMENTS = 1500,
 
 	// The number of test iterations to run
 	NUM_ITERATIONS = 1000,
@@ -74,7 +76,8 @@ var displayCaps = Ti.Platform.displayCaps || Ti.Platform.DisplayCaps,
 
 function createPostLayout(node) {
 	node.addEventListener('postlayout', function postLayout() {
-		var layoutTime = Date.now() - startTime;
+		var layoutTime = Date.now() - startTime,
+			dataEntry = data[data.length - 1];
 
 		node.removeEventListener('postlayout', postLayout);
 
@@ -85,13 +88,20 @@ function createPostLayout(node) {
 			sampleMean = layoutTime;
 		}
 
+		if (dataEntry) {
+			dataEntry.sampleTimes.push(layoutTime);
+				dataEntry.setupTime = setupTime;
+		}
+
 		if (samplesCollected === NUM_SAMPLES_TO_TAKE) {
+
+			layoutTime = sampleMean * 2 + setupTime;
 
 			// Update the iteration mean
 			if (iteration > 1) {
-				layoutMean = (layoutMean * (iteration - 1) + sampleMean) / iteration;
+				layoutMean = (layoutMean * (iteration - 1) + layoutTime) / iteration;
 			} else {
-				layoutMean = sampleMean;
+				layoutMean = layoutTime;
 			}
 
 			// Update the status text
@@ -99,8 +109,10 @@ function createPostLayout(node) {
 				status.text = 'Warming up';
 			} else {
 				status.text = 'Iteration: ' + iteration +
-					'\nSample Mean: ' + sampleMean.toFixed(1) * 2 +
-					'ms\nIteration Mean: ' + layoutMean.toFixed(1) * 2 + 'ms';
+					'\nSetup Time: ' + setupTime +
+					'ms\nSample Mean: ' + Math.round(sampleMean) +
+					'ms\nEstimated Layout Time: ' + Math.round(layoutTime) +
+					'ms\nLayout Mean: ' + Math.round(layoutMean) + 'ms';
 			}
 			runTest();
 		}
@@ -180,7 +192,7 @@ function configureTest(name) {
 		inputField: createEntry('Num Samples', NUM_SAMPLES_TO_TAKE),
 		parseValue: function () {
 			var value = parseInt(this.inputField.value, 10);
-			if (!isNaN(value) && value > 0 && value <= NUM_SAMPLES_TO_TAKE) {
+			if (!isNaN(value) && value > 0 && value <= NUM_CHILDREN_TO_CHANGE) {
 				NUM_SAMPLES_TO_TAKE = value;
 				console.log('Running test with ' + NUM_SAMPLES_TO_TAKE + ' samples');
 			} else {
@@ -315,6 +327,8 @@ function initTest() {
 	}
 	testNodes = container.children;
 
+	data = [];
+
 	status = Ti.UI.createLabel({
 		left: 0,
 		top: 0,
@@ -333,7 +347,9 @@ function initTest() {
 		backgroundColor: '#f00'
 	});
 	topLevel.addEventListener('postlayout', function () {
-		startTime = Date.now();
+		var currentTime = Date.now();
+		setupTime = currentTime - startTime;
+		startTime = currentTime;
 	});
 	topLevel.add(container);
 	topLevel.add(status);
@@ -350,7 +366,7 @@ function runTest() {
 		warmupRoundsRemaining--;
 		if (!warmupRoundsRemaining) {
 			iteration = 1;
-			testDelay = layoutMean * 4;
+			testDelay = layoutMean;
 			console.log('Running tests with a test delay of ' + testDelay + 'ms');
 		}
 	} else {
@@ -378,6 +394,13 @@ function runTest() {
 			}
 
 			samplesCollected = 0;
+			if (iteration) {
+				data.push({
+					sampleTimes: []
+				});
+			}
+
+			startTime = Date.now();
 
 			// Trigger a layout of the parent window to test optimization
 			topLevel.width += offset;
@@ -404,7 +427,7 @@ function runTest() {
 				bottom: 5
 			}),
 			results = Ti.UI.createLabel({
-				text: 'Mean layout time per iteration: ' + layoutMean * 2 + 'ms'
+				text: 'Mean layout time per iteration: ' + layoutMean.toFixed(1) + 'ms'
 			});
 		closeButton.addEventListener('click', function () {
 			resultsWin.close();
@@ -413,6 +436,7 @@ function runTest() {
 		resultsWin.add(results);
 		testWin.close();
 		resultsWin.open();
+		console.log(JSON.stringify(data, false, '\t'));
 	}
 }
 
