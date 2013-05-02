@@ -38,6 +38,7 @@
 			<inline-css-images>true</inline-css-images>
 		</splash>
 		<theme>default</theme>
+		<instrumentation>false</instrumentation>
 	</mobileweb>
 	<modules>
 	</modules>
