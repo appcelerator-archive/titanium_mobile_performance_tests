@@ -52,16 +52,16 @@ var displayCaps = Ti.Platform.displayCaps || Ti.Platform.DisplayCaps,
 	data,
 
 	// The minimum distance a child must be shifted. Must be a positive integer
-	OFFSET_MIN = 10,
+	OFFSET_MIN = 1,
 
 	// The variability in the distance a child will be shifted above the minimum. Must be a positive integer
-	OFFSET_SPREAD = 20,
+	OFFSET_SPREAD = 5,
 
 	// The number of columns to use
-	NUM_COLUMNS = 10,
+	NUM_COLUMNS = 20,
 
 	// The number of rows to use
-	NUM_ROWS = 100,
+	NUM_ROWS = 50,
 
 	// The number of test iterations to run
 	NUM_ITERATIONS = 1000,
@@ -314,8 +314,9 @@ function initTest() {
 		}),
 		column,
 		columnWidth = Math.floor(displayCaps.platformWidth / NUM_COLUMNS) - 1,
-		rowHeight = Math.floor(displayCaps.platformHeight / NUM_ROWS),
+		rowHeight = Math.floor(displayCaps.platformHeight / NUM_ROWS / 2),
 		child,
+		sizer,
 		color = [0, 0, 0],
 		i, j;
 
@@ -347,12 +348,21 @@ function initTest() {
 					('00' + color[2]).slice(-2) +
 					('00' + color[1]).slice(-2) +
 					('00' + color[0]).slice(-2),
-				left: Math.floor(Math.random() * (OFFSET_MIN + OFFSET_SPREAD) + columnWidth / 2 - (OFFSET_MIN + OFFSET_SPREAD) / 2),
+				width: Ti.UI.FILL,
+				height: Ti.UI.SIZE
+			});
+			column.add(child);
+
+			sizer = Ti.UI.createView({
+				backgroundColor: '#' +
+					('00' + color[2]).slice(-2) +
+					('00' + color[1]).slice(-2) +
+					('00' + color[0]).slice(-2),
 				width: Ti.UI.FILL,
 				height: rowHeight
 			});
-			testNodes.push(child);
-			column.add(child);
+			testNodes.push(sizer);
+			child.add(sizer);
 		}
 		container.add(column);
 	}
@@ -411,7 +421,7 @@ function runTest() {
 				i,
 				direction,
 				columnWidth = displayCaps.platformWidth / NUM_COLUMNS,
-				left;
+				height;
 
 			// Randomly select NUM_CHILDREN_TO_CHANGE from the list of all test nodes
 			availableChildren = [].concat(testNodes);
@@ -444,9 +454,9 @@ function runTest() {
 				child = childrenToChange[i];
 				do {
 					direction = (Math.random() - 0.5) > 0 ? 1 : -1;
-					left = Math.floor(child.left + direction * (Math.random() * OFFSET_SPREAD + OFFSET_MIN));
-				} while (left < 0 || left > columnWidth || left === child.left);
-				child.left = left;
+					height = Math.floor(child.height + direction * (Math.random() * OFFSET_SPREAD + OFFSET_MIN));
+				} while (height < 0 || height > columnWidth || height === child.height);
+				child.height = height;
 
 				if (childrenToSample.indexOf(child) !== -1) {
 					createPostLayout(child);
