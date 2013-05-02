@@ -18,7 +18,7 @@
  *    dimensions can be changed without requiring the container to be re-laid out. Whether or not the container is
  *    actually re-laid out is dependent on the underlying layout engine
  * 3) Set the container as the view of interest
- * 4) Recursively create a complete tree with l levels of views and t children per level. This gives t^l children
+ * 4) Recursively create a complete tree with l levels of views and t children per level
  *
  * Test operation:
  * 1) Per iteration:
@@ -195,8 +195,13 @@ function configureTest(name) {
 	inputValidators.push({
 		inputField: createEntry('Children To Shift', NUM_CHILDREN_TO_CHANGE),
 		parseValue: function () {
-			var value = parseInt(this.inputField.value, 10);
-			if (!isNaN(value) && value > 0 && value <= Math.pow(NUM_LEVELS, NUM_CHILDREN_PER_LEVEL)) {
+			var value = parseInt(this.inputField.value, 10),
+				numNodes = 0,
+				i;
+			for (i = 1; i <= NUM_LEVELS; i++) {
+				numNodes += Math.pow(NUM_CHILDREN_PER_LEVEL, i);
+			}
+			if (!isNaN(value) && value > 0 && value <= numNodes) {
 				NUM_CHILDREN_TO_CHANGE = value;
 				console.log('Running test with ' + NUM_CHILDREN_TO_CHANGE + ' children to shift');
 			} else {
