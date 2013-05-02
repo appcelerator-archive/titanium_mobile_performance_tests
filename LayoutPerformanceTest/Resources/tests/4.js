@@ -313,8 +313,8 @@ function initTest() {
 			layout: 'horizontal'
 		}),
 		column,
-		columnWidth = displayCaps.platformWidth / NUM_COLUMNS,
-		rowHeight = displayCaps.platformHeight / NUM_ROWS,
+		columnWidth = Math.floor(displayCaps.platformWidth / NUM_COLUMNS) - 1,
+		rowHeight = Math.floor(displayCaps.platformHeight / NUM_ROWS),
 		child,
 		color = [0, 0, 0],
 		i, j;
@@ -410,8 +410,8 @@ function runTest() {
 				child,
 				i,
 				direction,
-				offset,
-				columnWidth = displayCaps.platformWidth / NUM_COLUMNS;
+				columnWidth = displayCaps.platformWidth / NUM_COLUMNS,
+				left;
 
 			// Randomly select NUM_CHILDREN_TO_CHANGE from the list of all test nodes
 			availableChildren = [].concat(testNodes);
@@ -444,8 +444,9 @@ function runTest() {
 				child = childrenToChange[i];
 				do {
 					direction = (Math.random() - 0.5) > 0 ? 1 : -1;
-					child.left = Math.floor(child.left + direction * (Math.random() * OFFSET_SPREAD + OFFSET_MIN));
-				} while (child.left < 0 || child.left > columnWidth);
+					left = Math.floor(child.left + direction * (Math.random() * OFFSET_SPREAD + OFFSET_MIN));
+				} while (left < 0 || left > columnWidth);
+				child.left = left;
 
 				if (childrenToSample.indexOf(child) !== -1) {
 					createPostLayout(child);
