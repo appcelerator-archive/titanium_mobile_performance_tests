@@ -16,6 +16,9 @@ var win = Ti.UI.createWindow({
 		},{
 			title: 'Test 4 - FILL stress',
 			url: 'tests/4'
+		},{
+			title: 'Test 5 - Vertical SIZE stress',
+			url: 'tests/5'
 		}],
 	testList = Ti.UI.createTableView({
 		data: tests
