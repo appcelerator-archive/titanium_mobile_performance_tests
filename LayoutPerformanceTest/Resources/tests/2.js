@@ -461,15 +461,23 @@ function runTest() {
 			}),
 			results = Ti.UI.createLabel({
 				text: 'Mean layout time per iteration: ' + layoutMean.toFixed(1) + 'ms'
-			});
+			}),
+			i, ilen, j, jlen,
+			line;
 		closeButton.addEventListener('click', function () {
 			resultsWin.close();
 		});
+		for (i = 0, ilen = data.length; i < ilen; i++) {
+			line = data[i].setupTime;
+			for (j = 0, jlen = data[i].sampleTimes.length; j < jlen; j++) {
+				line += ',' + data[i].sampleTimes[j];
+			}
+			console.log(line);
+		}
 		resultsWin.add(closeButton);
 		resultsWin.add(results);
 		testWin.close();
 		resultsWin.open();
-		console.log(JSON.stringify(data, false, '\t'));
 	}
 }
 

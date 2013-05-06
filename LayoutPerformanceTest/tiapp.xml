@@ -48,5 +48,5 @@
 		<target device="iphone">true</target>
 		<target device="mobileweb">true</target>
 	</deployment-targets>
-	<sdk-version>3.2.0.TIMOB-13553</sdk-version>
+	<sdk-version>3.2.0</sdk-version>
 </ti:app>
