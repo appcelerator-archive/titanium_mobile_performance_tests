@@ -1,0 +1,400 @@
+diff --git a/android/kroll-apt/src/java/org/appcelerator/kroll/annotations/generator/ProxyBinding.fm b/android/kroll-apt/src/java/org/appcelerator/kroll/annotations/generator/ProxyBinding.fm
+index f9f018c..c63e370 100644
+--- a/android/kroll-apt/src/java/org/appcelerator/kroll/annotations/generator/ProxyBinding.fm
++++ b/android/kroll-apt/src/java/org/appcelerator/kroll/annotations/generator/ProxyBinding.fm
+@@ -552,6 +552,8 @@ fails, a JS exception is returned.
+ 
+ <#macro verifyAndConvertArguments args method>
+ 	<#-- Verify the correct argument count was provided. -->
++	tracking.markTime();
++
+ 	<@Proxy.getRequiredArgumentCount args=args ; requiredCount>
+ 	<#if requiredCount &gt; 0>
+ 	if (args.Length() < ${requiredCount}) {
+@@ -581,6 +583,7 @@ fails, a JS exception is returned.
+ 	env->DeleteLocalRef(sourceUrl);
+ 	</#if>
+ 
++	tracking.markTime();
+ 	<@Proxy.listMethodArguments args=args ; index, info, type, isOptional>
+ 
+ 	<#if type != "org.appcelerator.kroll.KrollInvocation">
+@@ -629,12 +632,14 @@ stores the return value in "result". A nested section can
+ beprovided to handle the result.
+ ---------------------------------------------------------------->
+ <#macro callJNIMethod methodArgs hasInvocation returnType methodID jobjectVar argsVar hasResult>
++	tracking.markTime();
+ 	<#local info = getTypeInfo(returnType)
+ 			callExpr = "Call${info.javaCallMethodType}MethodA"
+ 			argExpr = "${jobjectVar}, ${methodID}, ${argsVar}"
+ 			resultExpr = "${info.javaReturnType} jResult = (${info.javaReturnType})">
+ 	<#if hasResult>
+ 	${resultExpr}env->${callExpr}(${argExpr});
++	tracking.markTime();
+ 
+ 	<#local jsType = info.jsType>
+ 	<#if info?keys?seq_contains("jsConvertType")>
+@@ -643,6 +648,7 @@ beprovided to handle the result.
+ 
+ 	<#else>
+ 	env->${callExpr}(${argExpr});
++	tracking.markTime();
+ 	</#if>
+ 
+ 	<#-- Delete java proxy reference once done making the call. -->
+@@ -666,6 +672,7 @@ beprovided to handle the result.
+ 	}
+ 	</#if>
+ 
++	tracking.markTime();
+ 	<#if hasResult>
+ 	Handle<${jsType}> v8Result = titanium::TypeConverter::${info.javaToJsConverter}(env, jResult);
+ 
+diff --git a/android/kroll-apt/src/java/org/appcelerator/kroll/annotations/generator/ProxyBindingV8.cpp.fm b/android/kroll-apt/src/java/org/appcelerator/kroll/annotations/generator/ProxyBindingV8.cpp.fm
+index da29639..bc8c858 100644
+--- a/android/kroll-apt/src/java/org/appcelerator/kroll/annotations/generator/ProxyBindingV8.cpp.fm
++++ b/android/kroll-apt/src/java/org/appcelerator/kroll/annotations/generator/ProxyBindingV8.cpp.fm
+@@ -216,6 +216,8 @@ Handle<FunctionTemplate> ${className}::getProxyTemplate()
+ Handle<Value> ${className}::${method.apiName}(const Arguments& args)
+ {
+ 	LOGD(TAG, "${method.apiName}()");
++	titanium::watchCollection tracking("${className}::${method.apiName}()");
++	tracking.markTime();
+ 	HandleScope scope;
+ 
+ 	<@Proxy.initJNIEnv/>
+@@ -226,13 +228,17 @@ Handle<Value> ${className}::${method.apiName}(const Arguments& args)
+ 	<#if method.args?size &gt; 0>
+ 	<@Proxy.verifyAndConvertArguments method.args method />
+ 	<#else>
++	tracking.markTime();
+ 	jvalue* jArguments = 0;
++	tracking.markTime();
+ 	</#if>
+ 
+ 	jobject javaProxy = proxy->getJavaObject();
+ 	<@Proxy.callJNIMethod method.args, method.hasInvocation, method.returnType,
+ 		"methodID", "javaProxy", "jArguments", (method.returnType != "void") ; hasResult, resultVar>
+ 
++	tracking.markTime();
++	LOGI(TAG, "__TRACKING %s",tracking.jsonValue().c_str());
+ 	<#if hasResult>
+ 	return ${resultVar};
+ 	<#else>
+@@ -250,6 +256,8 @@ Handle<Value> ${className}::${method.apiName}(const Arguments& args)
+ Handle<Value> ${className}::getter_${name}(Local<String> property, const AccessorInfo& info)
+ {
+ 	LOGD(TAG, "get ${name}");
++	titanium::watchCollection tracking("${className}::getter_${name}()");
++	tracking.markTime();
+ 	HandleScope scope;
+ 
+ 	<@Proxy.initJNIEnv/>
+@@ -261,12 +269,17 @@ Handle<Value> ${className}::getter_${name}(Local<String> property, const Accesso
+ 		return Undefined();
+ 	}
+ 
++	tracking.markTime();
+ 	jvalue* jArguments = 0;
++	tracking.markTime();
+ 
+ 	jobject javaProxy = proxy->getJavaObject();
+ 	<@Proxy.callJNIMethod property.getMethodArgs, property.getHasInvocation, property.getReturnType,
+ 		"methodID", "javaProxy", "jArguments", (property.getReturnType != "void") ; hasResult, resultVar>
+ 
++	tracking.markTime();
++	LOGI(TAG, "__TRACKING %s",tracking.jsonValue().c_str());
++
+ 	return ${resultVar};
+ 
+ 	</@Proxy.callJNIMethod>
+@@ -277,6 +290,8 @@ Handle<Value> ${className}::getter_${name}(Local<String> property, const Accesso
+ void ${className}::setter_${name}(Local<String> property, Local<Value> value, const AccessorInfo& info)
+ {
+ 	LOGD(TAG, "set ${name}");
++	titanium::watchCollection tracking("${className}::setter_${name}()");
++	tracking.markTime();
+ 	HandleScope scope;
+ 
+ 	JNIEnv *env = titanium::JNIScope::getEnv();
+@@ -292,9 +307,13 @@ void ${className}::setter_${name}(Local<String> property, Local<Value> value, co
+ 		return;
+ 	}
+ 
++	tracking.markTime();
++
+ 	jvalue jArguments[1];
+ 	<#assign typeInfo = Proxy.getTypeInfo(property.setMethodArgs[0].type)>
+ 
++	tracking.markTime();
++
+ 	<@Proxy.verifyAndConvertArgument expr="value" index=0 info=typeInfo logOnly=true isOptional=false/>
+ 
+ 	jobject javaProxy = proxy->getJavaObject();
+@@ -309,6 +328,9 @@ void ${className}::setter_${name}(Local<String> property, Local<Value> value, co
+ 	<#if property.get == false>
+ 	Proxy::setProperty(property, value, info);
+ 	</#if>
++	tracking.markTime();
++	LOGI(TAG, "__TRACKING %s",tracking.jsonValue().c_str());
++
+ }
+ </#if>
+ 
+@@ -318,6 +340,8 @@ void ${className}::setter_${name}(Local<String> property, Local<Value> value, co
+ Handle<Value> ${className}::interceptor(Local<String> property, const AccessorInfo& info)
+ {
+ 	HandleScope scope;
++	titanium::watchCollection tracking("${className}::interceptor()");
++	tracking.markTime();
+ 
+ 	<@Proxy.initJNIEnv/>
+ 	<@Proxy.initMethodID className=className name=interceptor.name signature="(Ljava/lang/String;)Ljava/lang/Object;" logOnly=false/>
+diff --git a/android/runtime/v8/src/native/JNIUtil.cpp b/android/runtime/v8/src/native/JNIUtil.cpp
+index a851b61..bc7dc11 100644
+--- a/android/runtime/v8/src/native/JNIUtil.cpp
++++ b/android/runtime/v8/src/native/JNIUtil.cpp
+@@ -6,6 +6,8 @@
+  */
+ #include <jni.h>
+ #include <stdio.h>
++#include <unistd.h>
++#include <pthread.h>
+ 
+ #include "JNIUtil.h"
+ #include "AndroidUtil.h"
+@@ -365,4 +367,41 @@ void JNIUtil::initCache()
+ 	undefinedObject = env->NewGlobalRef(env->GetStaticObjectField(krollRuntimeClass, undefinedObjectField));
+ }
+ 
++
++void timespecStopWatch::markTime()
++{
++	if (watchSelector < 7) {
++		clock_gettime(clock, &watchTimes[watchSelector]);
++	}
++	watchSelector++;
++}
++
++std::string timespecStopWatch::jsonValue()
++{
++	char buffer[1024];
++	snprintf(buffer,1024,"[{sec:%ld,nsec:%ld},{sec:%ld,nsec:%ld},{sec:%ld,nsec:%ld},"
++		"{sec:%ld,nsec:%ld},{sec:%ld,nsec:%ld},{sec:%ld,nsec:%ld},{sec:%ld,nsec:%ld}]",
++		watchTimes[0].tv_sec, watchTimes[0].tv_nsec, watchTimes[1].tv_sec, watchTimes[1].tv_nsec,
++		watchTimes[2].tv_sec, watchTimes[2].tv_nsec, watchTimes[3].tv_sec, watchTimes[3].tv_nsec,
++		watchTimes[4].tv_sec, watchTimes[4].tv_nsec, watchTimes[5].tv_sec, watchTimes[5].tv_nsec,
++		watchTimes[6].tv_sec, watchTimes[6].tv_nsec );
++	return std::string(buffer);
++}
++
++void watchCollection::markTime()
++{
++	threadWatch.markTime();
++	processWatch.markTime();
++	wallWatch.markTime();
++}
++
++std::string watchCollection::jsonValue()
++{
++	char buffer[4096];
++	snprintf(buffer,4096,"{name:\"%s\",threadTime:%s,processTime:%s,wallTime:%s,pid:%d,thread:%u}",
++		name.c_str(), threadWatch.jsonValue().c_str(), processWatch.jsonValue().c_str(),
++		wallWatch.jsonValue().c_str(), getpid(), gettid());
++	return std::string(buffer);
++}
++
+ } // namespace titanium
+diff --git a/android/runtime/v8/src/native/JNIUtil.h b/android/runtime/v8/src/native/JNIUtil.h
+index e857152..ca9c183 100644
+--- a/android/runtime/v8/src/native/JNIUtil.h
++++ b/android/runtime/v8/src/native/JNIUtil.h
+@@ -11,6 +11,11 @@
+ #include <stdint.h>
+ #include "AndroidUtil.h"
+ 
++#include <sys/time.h>
++#include <unistd.h>
++#include <time.h>
++#include <string>
++
+ #define JNIENV_GET_ERROR_MSG "Unable to get current JNI environment."
+ #define LOG_JNIENV_GET_ERROR(tag) \
+ 	LOGE(tag, JNIENV_GET_ERROR_MSG)
+@@ -158,6 +163,36 @@ private:
+ 	JNIEnv* prev;
+ };
+ 
++class timespecStopWatch
++{
++public:
++	timespecStopWatch(clockid_t newClock) : clock(newClock) {
++		watchSelector = 0;
++	}
++	void markTime();
++	std::string jsonValue();
++private:
++	timespec watchTimes[7];
++	int watchSelector;
++	clockid_t clock;
++};
++
++class watchCollection
++{
++public:
++	watchCollection(std::string watchname) : name(watchname), wallWatch(CLOCK_REALTIME),
++			processWatch(CLOCK_PROCESS_CPUTIME_ID), threadWatch(CLOCK_THREAD_CPUTIME_ID){
++	}
++	void markTime();
++	std::string jsonValue();
++private:
++	timespecStopWatch threadWatch;
++	timespecStopWatch processWatch;
++	timespecStopWatch wallWatch;
++	std::string name;
++};
++
++
+ }
+ 
+ #endif
+diff --git a/android/runtime/v8/src/native/V8Object.cpp b/android/runtime/v8/src/native/V8Object.cpp
+index 8a54e2e..ae21360 100644
+--- a/android/runtime/v8/src/native/V8Object.cpp
++++ b/android/runtime/v8/src/native/V8Object.cpp
+@@ -42,9 +42,13 @@ JNIEXPORT void JNICALL
+ Java_org_appcelerator_kroll_runtime_v8_V8Object_nativeSetProperty
+ 	(JNIEnv *env, jobject object, jlong ptr, jstring name, jobject value)
+ {
++	watchCollection tracking("Java_org_appcelerator_kroll_runtime_v8_V8Object_nativeSetProperty()");
++	tracking.markTime();
++
+ 	ENTER_V8(V8Runtime::globalContext);
+ 	titanium::JNIScope jniScope(env);
+ 
++	tracking.markTime();
+ 	Handle<Object> jsObject;
+ 	if (ptr != 0) {
+ 		jsObject = Persistent<Object>((Object *) ptr);
+@@ -53,10 +57,17 @@ Java_org_appcelerator_kroll_runtime_v8_V8Object_nativeSetProperty
+ 	}
+ 
+ 	Handle<Object> properties = jsObject->Get(Proxy::propertiesSymbol)->ToObject();
++	tracking.markTime();
+ 	Handle<Value> jsName = TypeConverter::javaStringToJsString(env, name);
+ 
+ 	Handle<Value> jsValue = TypeConverter::javaObjectToJsValue(env, value);
++	tracking.markTime();
+ 	properties->Set(jsName, jsValue);
++	tracking.markTime();
++
++	tracking.markTime();
++	tracking.markTime();
++	LOGI(TAG, "__TRACKING %s",tracking.jsonValue().c_str());
+ }
+ 
+ 
+@@ -64,9 +75,14 @@ JNIEXPORT jboolean JNICALL
+ Java_org_appcelerator_kroll_runtime_v8_V8Object_nativeFireEvent
+ 	(JNIEnv *env, jobject jEmitter, jlong ptr, jobject jsource, jlong sourcePtr, jstring event, jobject data, jboolean bubble, jboolean reportSuccess, jint code, jstring errorMessage)
+ {
++	watchCollection tracking("Java_org_appcelerator_kroll_runtime_v8_V8Object_nativeFireEvent()");
++	tracking.markTime();
++
+ 	ENTER_V8(V8Runtime::globalContext);
+ 	JNIScope jniScope(env);
+ 
++	tracking.markTime();
++
+ 	Handle<Value> jsEvent = TypeConverter::javaStringToJsString(env, event);
+ 
+ #ifdef TI_DEBUG
+@@ -97,6 +113,8 @@ Java_org_appcelerator_kroll_runtime_v8_V8Object_nativeFireEvent
+ 
+ 	Handle<Function> fireEvent = Handle<Function>::Cast(fireEventValue->ToObject());
+ 
++	tracking.markTime();
++
+ 	Handle<Object> jsData = TypeConverter::javaHashMapToJsValue(env, data);
+ 
+ 	jsData->Set(String::NewSymbol("bubbles"), TypeConverter::javaBooleanToJsBoolean(bubble));
+@@ -115,14 +133,27 @@ Java_org_appcelerator_kroll_runtime_v8_V8Object_nativeFireEvent
+ 	Handle<Value> result;
+ 	TryCatch tryCatch;
+ 	Handle<Value> args[] = { jsEvent, jsData };
++
++	tracking.markTime();
++
+ 	result = fireEvent->Call(emitter, 2, args);
+ 
++	tracking.markTime();
++
+ 	if (tryCatch.HasCaught()) {
+ 		V8Util::openJSErrorDialog(tryCatch);
+ 		V8Util::reportException(tryCatch);
+ 	} else if (result->IsTrue()) {
++
++		tracking.markTime();
++		tracking.markTime();
++		LOGI(TAG, "__TRACKING %s",tracking.jsonValue().c_str());
+ 		return JNI_TRUE;
+ 	}
++
++	tracking.markTime();
++	tracking.markTime();
++	LOGI(TAG, "__TRACKING %s",tracking.jsonValue().c_str());
+ 	return JNI_FALSE;
+ }
+ 
+@@ -130,9 +161,13 @@ JNIEXPORT jobject JNICALL
+ Java_org_appcelerator_kroll_runtime_v8_V8Object_nativeCallProperty
+ 	(JNIEnv* env, jclass clazz, jlong ptr, jstring propertyName, jobjectArray args)
+ {
++	watchCollection tracking("Java_org_appcelerator_kroll_runtime_v8_V8Object_nativeCallProperty()");
++	tracking.markTime();
++
+ 	ENTER_V8(V8Runtime::globalContext);
+ 	JNIScope jniScope(env);
+ 
++	tracking.markTime();
+ 	Handle<Value> jsPropertyName = TypeConverter::javaStringToJsString(env, propertyName);
+ 	Persistent<Object> object = Persistent<Object>((Object*) ptr);
+ 	Local<Value> property = object->Get(jsPropertyName);
+@@ -140,27 +175,36 @@ Java_org_appcelerator_kroll_runtime_v8_V8Object_nativeCallProperty
+ 		return JNIUtil::undefinedObject;
+ 	}
+ 
++	tracking.markTime();
+ 	int argc = 0;
+ 	Handle<Value>* argv = NULL;
+ 	if (args) {
+ 		argv = TypeConverter::javaObjectArrayToJsArguments(args, &argc);
+ 	}
+ 
++	tracking.markTime();
+ 	TryCatch tryCatch;
+ 	Local<Function> function = Local<Function>::Cast(property);
+ 	Local<Value> returnValue = function->Call(object, argc, argv);
++	tracking.markTime();
+ 
+ 	if (argv) {
+ 		delete[] argv;
+ 	}
++	tracking.markTime();
+ 
+ 	if (tryCatch.HasCaught()) {
+ 		V8Util::reportException(tryCatch);
++		tracking.markTime();
++		LOGI(TAG, "__TRACKING %s",tracking.jsonValue().c_str());
+ 		return JNIUtil::undefinedObject;
+ 	}
+ 
+ 	bool isNew;
+-	return TypeConverter::jsValueToJavaObject(env, returnValue, &isNew);
++	jobject result = TypeConverter::jsValueToJavaObject(env, returnValue, &isNew);
++	tracking.markTime();
++	LOGI(TAG, "__TRACKING %s",tracking.jsonValue().c_str());
++	return result;
+ }
+ 
+ JNIEXPORT jboolean JNICALL

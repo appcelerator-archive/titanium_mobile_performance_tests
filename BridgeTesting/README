@@ -1,0 +1,15 @@
+To use this framework: 
+
+Use the patch to modify your copy of Titanium, build.
+Run app with new Titanium
+Use adb logcat to extract the json outputted, clean it up,
+Put in HTML file.
+
+In the HTML, you can search by method name.
+The three radio buttons report either:
+ 1) CPU time taken by the thread to process.
+ 2) CPU time taken by all threads during the processing.
+ 3) Physical time elapsed during the processing.
+
+Included is GoT's playthrough, which is a hefty 127MB of data
+Please be patient when loading it.
